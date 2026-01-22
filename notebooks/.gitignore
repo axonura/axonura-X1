@@ -1,0 +1,8 @@
+# AI Model Files
+*.json
+*.csv
+*.keras
+*.h5
+*.torch
+*.xls
+*.xlsx

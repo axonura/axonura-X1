@@ -1,0 +1,20 @@
+# Code Editor Files
+.vscode
+.cursor
+.idea
+*.iml
+*.cson
+*.sln
+*.suo
+*.vsproject
+
+# Python Generated Files
+__pycache__
+.venv
+*.__pycache__
+*.pyc
+
+# Wandb Generated Files
+wandb
+.wandb
+*.wandb
