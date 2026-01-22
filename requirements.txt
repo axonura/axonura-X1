@@ -1,0 +1,12 @@
+tensorflow
+tf-keras
+transformers
+datasets
+tokenizers
+pandas
+matplotlib
+numpy
+torch
+torchvision
+hf_xet
+wandb
