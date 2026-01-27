@@ -13,6 +13,7 @@ __pycache__
 .venv
 *.__pycache__
 *.pyc
+__init__.py
 
 # Wandb Generated Files
 wandb
