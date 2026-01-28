@@ -34,6 +34,6 @@ def tf_encode(text_batch, tokenizer, max_len):
     ids.set_shape([None, max_len]) 
     return ids
 
-def batch_iterator():
+def batch_iterator(dataset):
     for i in range(0, len(dataset), 1000):
         yield dataset[i: i + 1000]["text"]

@@ -1,9 +1,4 @@
 import os
-
-# Suppress TensorFlow logs and oneDNN informational messages
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-
 import tensorflow as tf
 from tensorflow import keras
 from datasets import load_dataset
@@ -36,7 +31,10 @@ trainer = trainers.BpeTrainer(
     special_tokens=["<unk>", "<pad>", "<bos>", "<eos>"]
 )
             
-tokenizer.train_from_iterator(utils.batch_iterator(dataset["train"]), trainer=trainer)
+tokenizer.train_from_iterator(
+    utils.batch_iterator(dataset["train"]),
+    trainer=trainer
+)
 tokenizer.save(TOKENIZER_PATH)
 print(f"Tokenizer saved to {TOKENIZER_PATH}")
 

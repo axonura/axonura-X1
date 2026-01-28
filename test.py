@@ -22,23 +22,21 @@ def predict(prompt, temprature=0.7, max_len=128, max_tokens=2048):
         logits = logits[:, -1, :] / temprature
 
         # Top-K Sampling
-        values, indices = tf.math.top_k(logits, k=64)
+        values, top_k_indices = tf.math.top_k(logits, k=64)
         probs = tf.math.softmax(values, axis=-1)
 
-        indices = tf.random.categorical(probs, num_samples=1)
-        indices = keras.layers.Dense(indices)
+        # Sample from the top-k indices
+        sample_index = tf.random.categorical(probs, num_samples=1)
+        NXID = tf.gather(top_k_indices, sample_index, batch_dims=1)
 
-        NXID = tf.random.choice(indices, p=probs)
-        NXT = tf.gather(tokenizer.get_vocab(), NXID)
+        ids = tf.concat([ids, NXID], axis=-1)
 
-        ids = tf.concat([ids, NXID[tf.newaxis, tf.newaxis]], axis=-1)
-
-        # End The Prediction If Next Tokens Is Not Suggest By AI
-        if hasattr(tokenizer, "eos_token_id"):
-            if NXT[0, 0] == tokenizer.eos_token_id:
+        # End The Prediction If Next Token is EOS
+        if hasattr(tokenizer, "eos_token_id") and tokenizer.eos_token_id is not None:
+            if NXID[0, 0] == tokenizer.eos_token_id:
                 break
 
-    return tf.decode(ids[0].numpy)
+    return tokenizer.decode(ids[0].numpy())
 
 while True:
     prompt = input("You: ")
