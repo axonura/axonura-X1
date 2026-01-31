@@ -85,5 +85,5 @@ model.fit(
 
 # 7. Save Model
 print("Saving model...")
-model.save_weights("model.h5")
+model.save_weights("model.weights.h5")
 print("AI building logic completed successfully.")

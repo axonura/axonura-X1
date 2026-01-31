@@ -1,15 +1,47 @@
+import os
 import tensorflow as tf
-import tensorflow.keras as keras
 from transformers import PreTrainedTokenizerFast
+from inference import Model
 
-# Loads The Model And Tokenizer
-model = tf.keras.models.load_model("model.h5")
+# Configuration (must match build.py)
+VOCAB_SIZE = 10000
+DIM = 256
+HEADS = 8
+LAYERS = 4
+MAX_LEN = 128
+DROPOUT = 0.1
+
+# Instantiate the Model
+model = Model.ThinkingGPT(
+    vocab_size=VOCAB_SIZE,
+    dim=DIM,
+    heads=HEADS,
+    layers=LAYERS,
+    dropout=DROPOUT,
+    max_len=MAX_LEN
+)
+
+# Build the model by calling it on dummy input
+dummy_input = tf.zeros((1, MAX_LEN), dtype=tf.int32)
+_ = model(dummy_input, training=False)
+
+# Load the weights
+model.load_weights("model.weights.h5")
 tokenizer = PreTrainedTokenizerFast(tokenizer_file="tokenizer.json")
 
-def predict(prompt, temprature=0.7, max_len=128, max_tokens=2048):
+# Configure special tokens
+tokenizer.pad_token = "<pad>"
+tokenizer.unk_token = "<unk>"
+tokenizer.bos_token = "<bos>"
+tokenizer.eos_token = "<eos>"
+
+def predict(prompt, temprature=0.7, max_len=128, max_tokens=512):
+    # Prepend BOS token to the prompt
+    prompt_with_bos = "<bos>" + prompt
+    
     enc = tokenizer(
-        [prompt],
-        padding="<pad>",
+        [prompt_with_bos],
+        padding="max_length",
         truncation=True,
         max_length=max_len,
         return_tensors="tf"
@@ -32,14 +64,17 @@ def predict(prompt, temprature=0.7, max_len=128, max_tokens=2048):
         ids = tf.concat([ids, NXID], axis=-1)
 
         # End The Prediction If Next Token is EOS
-        if hasattr(tokenizer, "eos_token_id") and tokenizer.eos_token_id is not None:
-            if NXID[0, 0] == tokenizer.eos_token_id:
-                break
+        if NXID[0, 0] == tokenizer.eos_token_id:
+            break
 
-    return tokenizer.decode(ids[0].numpy())
+    # Decode and skip special tokens (removes <bos>, <eos>, <pad>, etc.)
+    return tokenizer.decode(ids[0].numpy(), skip_special_tokens=True)
 
 while True:
     prompt = input("You: ")
     if(prompt.lower() == "exit"):
-        break
-    print("AI: ", predict(prompt.lower()))
+        os.exit()
+    elif(prompt.lower() == "clear"):
+        os.system("clear || cls")
+    else:
+        print("AI: ", predict(prompt.lower()))
