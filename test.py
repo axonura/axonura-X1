@@ -1,4 +1,4 @@
-import os
+import os, sys, re
 import tensorflow as tf
 from transformers import PreTrainedTokenizerFast
 from inference import Model
@@ -35,46 +35,58 @@ tokenizer.unk_token = "<unk>"
 tokenizer.bos_token = "<bos>"
 tokenizer.eos_token = "<eos>"
 
-def predict(prompt, temprature=0.7, max_len=128, max_tokens=512):
-    # Prepend BOS token to the prompt
-    prompt_with_bos = "<bos>" + prompt
-    
-    enc = tokenizer(
-        [prompt_with_bos],
-        padding="max_length",
-        truncation=True,
-        max_length=max_len,
-        return_tensors="tf"
-    )
+def predict(prompt, temperature=0.7, max_tokens=256):
+    # Add BOS token
+    prompt_with_bos = tokenizer.bos_token + prompt
 
+    # Encode without padding
+    enc = tokenizer(
+        prompt_with_bos,
+        return_tensors="tf",
+        add_special_tokens=False
+    )
     ids = enc["input_ids"]
 
     for _ in range(max_tokens):
         logits = model(ids, training=False)
-        logits = logits[:, -1, :] / temprature
+        logits = logits[:, -1, :] / temperature
 
-        # Top-K Sampling
-        values, top_k_indices = tf.math.top_k(logits, k=64)
-        probs = tf.math.softmax(values, axis=-1)
+        # Top-K sampling
+        values, indices = tf.math.top_k(logits, k=64)
+        probs = tf.nn.softmax(values)
+        sample = tf.random.categorical(probs, 1)
+        next_id = tf.gather(indices, sample, batch_dims=1)
 
-        # Sample from the top-k indices
-        sample_index = tf.random.categorical(probs, num_samples=1)
-        NXID = tf.gather(top_k_indices, sample_index, batch_dims=1)
+        # Append the next token
+        ids = tf.concat([ids, next_id], axis=-1)
 
-        ids = tf.concat([ids, NXID], axis=-1)
-
-        # End The Prediction If Next Token is EOS
-        if NXID[0, 0] == tokenizer.eos_token_id:
+        # Stop if EOS is generated
+        if next_id[0, 0] == tokenizer.eos_token_id:
             break
 
-    # Decode and skip special tokens (removes <bos>, <eos>, <pad>, etc.)
-    return tokenizer.decode(ids[0].numpy(), skip_special_tokens=True)
+    # Decode to text
+    text = tokenizer.decode(ids[0].numpy(), skip_special_tokens=True)
 
+    # Post-process GPT/BPE subwords:
+    text = re.sub(r'(\w) (\w+)', r'\1\2', text)
+    text = text.replace("Ġ", " ")
+
+    # Strip leading/trailing whitespace
+    return text.strip()
+
+print("Type Help To Get Commands")
 while True:
     prompt = input("You: ")
-    if(prompt.lower() == "exit"):
-        os.exit()
-    elif(prompt.lower() == "clear"):
-        os.system("clear || cls")
+    if prompt.lower() == "exit":
+        sys.exit()
+    elif prompt.lower() == "clear":
+        if os.name == "nt":
+            os.system("cls")
+        else:
+            os.system("clear")
+    elif prompt.lower() == "help":
+        print("Type 'exit' with enter key to exit the program.")
+        print("Type 'clear' with enter key to clear the screen.")
+        print('Type Anything Then Press Enter Key To Ask AI')
     else:
-        print("AI: ", predict(prompt.lower()))
+        print("AI: ", predict(prompt))
