@@ -2,6 +2,27 @@ import datasets
 import keras_hub
 import tensorflow as tf
 from tensorflow import keras
+import wandb
+
+
+def log_wandb_model_calculations(model: keras.Model) -> None:
+    if wandb.run is None:
+        return
+
+    total_params = model.count_params()
+    trainable_params = sum(int(tf.size(weight)) for weight in model.trainable_weights)
+    non_trainable_params = sum(int(tf.size(weight)) for weight in model.non_trainable_weights)
+    total_bytes = sum(int(tf.size(weight)) * weight.dtype.size for weight in model.weights)
+    total_megabytes = total_bytes / (1024 * 1024)
+
+    wandb.log(
+        {
+            "model/total_params": total_params,
+            "model/trainable_params": trainable_params,
+            "model/non_trainable_params": non_trainable_params,
+            "model/size_mb": total_megabytes,
+        }
+    )
 
 class CausalSelfAttention(keras.layers.Layer):
     def __init__(self, dim=256, heads=8, dropout=0.1, rope_dim=None):

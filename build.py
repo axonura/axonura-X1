@@ -1,6 +1,9 @@
 import os
 import tensorflow as tf
 from tensorflow import keras
+from dotenv import load_dotenv
+import wandb
+from wandb.keras import WandbCallback
 from datasets import load_dataset
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers
 from transformers import PreTrainedTokenizerFast
@@ -16,6 +19,61 @@ DROPOUT = 0.1
 BATCH_SIZE = 32
 EPOCHS = 25
 TOKENIZER_PATH = "tokenizer.json"
+
+load_dotenv()
+
+WANDB_API_KEY = os.getenv("WANDB_API_KEY")
+WANDB_PROJECT = os.getenv("WANDB_PROJECT", "ThinkingGPT")
+WANDB_RUN_NAME = os.getenv("WANDB_RUN_NAME", "training-run")
+
+if WANDB_API_KEY:
+    wandb.login(key=WANDB_API_KEY)
+    wandb_run = wandb.init(
+        project=WANDB_PROJECT,
+        name=WANDB_RUN_NAME,
+        job_type="training",
+        config={
+            "vocab_size": VOCAB_SIZE,
+            "dim": DIM,
+            "heads": HEADS,
+            "layers": LAYERS,
+            "max_len": MAX_LEN,
+            "dropout": DROPOUT,
+            "batch_size": BATCH_SIZE,
+            "epochs": EPOCHS,
+            "tokenizer_path": TOKENIZER_PATH,
+        },
+    )
+else:
+    wandb_run = None
+    print("WANDB_API_KEY not set. Skipping Weights & Biases logging.")
+
+
+class WandbMetricsCallback(keras.callbacks.Callback):
+    def __init__(self, use_wandb: bool) -> None:
+        super().__init__()
+        self.use_wandb = use_wandb
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        learning_rate = float(tf.keras.backend.get_value(self.model.optimizer.learning_rate))
+        metrics = {
+            "learning_rate": learning_rate,
+        }
+        if "accuracy" in logs:
+            metrics["learning_error"] = 1.0 - float(logs["accuracy"])
+        if self.use_wandb:
+            wandb.log(metrics, step=epoch)
+
+
+wandb_callbacks = []
+if wandb_run is not None:
+    wandb_callbacks = [
+        WandbCallback(save_model=False, log_weights=False, log_evaluation=True),
+        WandbMetricsCallback(use_wandb=True),
+    ]
+else:
+    wandb_callbacks = [WandbMetricsCallback(use_wandb=False)]
 
 # Load Dataset
 print("Loading dataset...")
@@ -73,6 +131,9 @@ model.compile(
     metrics=["accuracy"]
 )
 
+model.build((None, MAX_LEN))
+Model.log_wandb_model_calculations(model)
+
 # 6. Training
 print("Starting training...")
 model.fit(
@@ -80,10 +141,14 @@ model.fit(
     steps_per_epoch=STEPS_PER_EPOCH,
     validation_data=val_ds,
     validation_steps=VALIDATION_STEPS,
-    epochs=EPOCHS
+    epochs=EPOCHS,
+    callbacks=wandb_callbacks,
 )
 
 # 7. Save Model
 print("Saving model...")
 model.save_weights("model.weights.h5")
 print("AI building logic completed successfully.")
+
+if wandb_run is not None:
+    wandb_run.finish()
