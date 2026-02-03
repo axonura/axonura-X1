@@ -4,8 +4,8 @@ import tensorflow as tf
 from tensorflow import keras
 
 class CausalSelfAttention(keras.layers.Layer):
-    def __init__(self, dim=256, heads=8, dropout=0.1, rope_dim=None):
-        super().__init__()
+    def __init__(self, dim=256, heads=8, dropout=0.1, rope_dim=None, name="causal_self_attention"):
+        super().__init__(name=name)
         self.dim = dim
         self.heads = heads
         self.head_dim = dim // heads
@@ -71,8 +71,8 @@ class CausalSelfAttention(keras.layers.Layer):
         return self.proj(out), kv_cache
 
 class FeedForward(keras.layers.Layer):
-    def __init__(self, d_model=256, multiplier=2.66, dropout=0.1):
-        super().__init__()
+    def __init__(self, d_model=256, multiplier=2.66, dropout=0.1, name="feed_forward"):
+        super().__init__(name=name)
         # d_ff = SwiGLU multiplier × d_model
         d_ff = int(multiplier * d_model)
 
@@ -90,16 +90,25 @@ class FeedForward(keras.layers.Layer):
         return self.w_out(hidden)
 
 class TransformerBlock(keras.layers.Layer):
-    def __init__(self, dim=256, heads=8, dropout=0.1):
-        super().__init__()
+    def __init__(self, dim=256, heads=8, dropout=0.1, name="transformer_block"):
+        super().__init__(name=name)
         self.dim = dim
         self.heads = heads
 
         self.norm1 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.norm2 = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.attn = CausalSelfAttention(dim=dim, heads=heads, dropout=dropout)
-        self.ffn = FeedForward(d_model=dim, dropout=dropout)
+        self.attn = CausalSelfAttention(
+            dim=dim,
+            heads=heads,
+            dropout=dropout,
+            name=f"{name}_attention"
+        )
+        self.ffn = FeedForward(
+            d_model=dim,
+            dropout=dropout,
+            name=f"{name}_ffn"
+        )
 
         self.dropout = keras.layers.Dropout(dropout)
 
@@ -115,14 +124,17 @@ class TransformerBlock(keras.layers.Layer):
         return x, kv_cache
 
 class ThinkingGPT(keras.Model):
-    def __init__(self, vocab_size, dim=256, heads=8, layers=4, dropout=0.1, max_len=128):
-        super().__init__()
+    def __init__(self, vocab_size, dim=256, heads=8, layers=4, dropout=0.1, max_len=128, name="thinking_gpt"):
+        super().__init__(name=name)
         self.vocab_size = vocab_size
         self.dim = dim
         self.max_len = max_len
 
-        self.embedding = keras.layers.Embedding(vocab_size, dim)
-        self.blocks = [TransformerBlock(dim=dim, heads=heads, dropout=dropout) for _ in range(layers)]
+        self.embedding = keras.layers.Embedding(vocab_size, dim, name=f"{name}_embedding")
+        self.blocks = [
+            TransformerBlock(dim=dim, heads=heads, dropout=dropout, name=f"{name}_block_{idx}")
+            for idx in range(layers)
+        ]
         self.norm_final = keras.layers.LayerNormalization(epsilon=1e-5)
         self.head = keras.layers.Dense(vocab_size, use_bias=False)
 
