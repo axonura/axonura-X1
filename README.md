@@ -24,6 +24,12 @@ Axonura X1 is a language model built using the GPT-2 Like architecture. It is de
 
 ## Usage
 Python 3.7 Version Or Later Must Be Installed On Your Machine.
+Create A `.env` File With Your Weights & Biases Credentials:
+```bash
+WANDB_API_KEY=your_wandb_api_key
+WANDB_PROJECT=axonura-x1-training
+WANDB_ENTITY=your_team_or_username
+```
 ```bash
 python3 build.py
 python3 test.py
