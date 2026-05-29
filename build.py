@@ -6,7 +6,7 @@ from datasets import load_dataset
 from tokenizers import Tokenizer, models, trainers, pre_tokenizers
 from transformers import PreTrainedTokenizerFast
 import wandb
-from wandb.keras import WandbCallback
+from wandb.integration.keras import WandbCallback
 from inference import Model, Pipeline, utils
 
 # Configuration
@@ -21,17 +21,36 @@ EPOCHS = 100
 DEPTH_RATE = 64
 TOKENIZER_PATH = "tokenizer.json"
 
-load_dotenv()
+if os.path.exists("model.weights.h5"): os.remove("model.weights.h5")
+if os.path.exists("tokenizer.json"): os.remove("tokenizer.json")
 
-WANDB_PROJECT = os.getenv("WANDB_PROJECT", "axonura-x1-training")
-WANDB_ENTITY = os.getenv("WANDB_ENTITY")
+if os.path.exists(".env"):
+    load_dotenv(dotenv_path=".env")
+
+WANDB_PROJECT = os.getenv("WANDB_PROJECT", "axonura-x1")
+WANDB_ENTITY = os.getenv("WANDB_ENTITY", None)
 WANDB_API_KEY = os.getenv("WANDB_API_KEY")
+
+# Prompt for API key if not set in environment
+if WANDB_API_KEY is None:
+    user_input = input("Enter API Key To Visualize (Optional): ").strip()
+    WANDB_API_KEY = user_input if user_input else None
 
 wandb_run = None
 wandb_callback = None
 
 if WANDB_API_KEY:
     wandb.login(key=WANDB_API_KEY)
+    # Get the logged-in user's default username if WANDB_ENTITY is not set
+    if not WANDB_ENTITY:
+        try:
+            api = wandb.Api()
+            WANDB_ENTITY = api.viewer.get("username") or api.default_entity
+            print(f"Using WandB entity: {WANDB_ENTITY}")
+        except Exception as e:
+            print(f"Warning: Could not fetch default entity from WandB API: {e}")
+            WANDB_ENTITY = None
+    
     wandb_run = wandb.init(
         project=WANDB_PROJECT,
         entity=WANDB_ENTITY,
@@ -86,7 +105,7 @@ class WandbMetricsCallback(keras.callbacks.Callback):
 
 # Load Dataset
 print("Loading dataset...")
-dataset = load_dataset("ise-uiuc/Magicoder-OSS-Instruct-75K")
+dataset = load_dataset("wikitext", "wikitext-103-raw-v1")
 
 print("Building tokenizer...")
 tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
