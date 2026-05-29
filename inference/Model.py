@@ -1,15 +1,17 @@
+import math
 import datasets
 import keras_hub
 import tensorflow as tf
 from tensorflow import keras
 
 class CausalSelfAttention(keras.layers.Layer):
-    def __init__(self, dim=256, heads=8, dropout=0.1, rope_dim=None, name="causal_self_attention"):
+    def __init__(self, depth, dim=256, heads=8, dropout=0.1, rope_dim=None, name="causal_self_attention"):
         super().__init__(name=name)
         self.dim = dim
         self.heads = heads
         self.head_dim = dim // heads
         self.scale = self.head_dim ** -0.5
+        self.depth = dim / self.scale * depth
 
         # Layers
         self.qkv = keras.layers.Dense(dim * 3, use_bias=False)
@@ -59,7 +61,8 @@ class CausalSelfAttention(keras.layers.Layer):
         attn = tf.where(mask == 0, -1e9, attn)
 
         # Softmax And Dropout
-        attn = tf.nn.softmax(attn, axis=-1)
+        attn = keras.layers.LayerNormalization(attn, epsilon=1e-05 * max(self.depth, 1e-05))
+        attn = keras.layers.Softmax(attn, axis=-1)
         attn = self.dropout(attn, training=training)
 
         # Weighted sum
@@ -90,7 +93,7 @@ class FeedForward(keras.layers.Layer):
         return self.w_out(hidden)
 
 class TransformerBlock(keras.layers.Layer):
-    def __init__(self, dim=256, heads=8, dropout=0.1, name="transformer_block"):
+    def __init__(self, depthRate,dim=256, heads=8, dropout=0.1, name="transformer_block"):
         super().__init__(name=name)
         self.dim = dim
         self.heads = heads
@@ -102,7 +105,8 @@ class TransformerBlock(keras.layers.Layer):
             dim=dim,
             heads=heads,
             dropout=dropout,
-            name=f"{name}_attention"
+            name=f"{name}_attention",
+            depth=(math.log((math.sin(dim * heads) + math.cos(dim * heads)) - dropout) / 8) * depthRate
         )
         self.ffn = FeedForward(
             d_model=dim,
@@ -124,7 +128,7 @@ class TransformerBlock(keras.layers.Layer):
         return x, kv_cache
 
 class ThinkingGPT(keras.Model):
-    def __init__(self, vocab_size, dim=256, heads=8, layers=4, dropout=0.1, max_len=128, name="thinking_gpt"):
+    def __init__(self, vocab_size, depthRate, dim=256, heads=8, layers=4, dropout=0.1, max_len=128, name="thinking_gpt"):
         super().__init__(name=name)
         self.vocab_size = vocab_size
         self.dim = dim
@@ -132,7 +136,7 @@ class ThinkingGPT(keras.Model):
 
         self.embedding = keras.layers.Embedding(vocab_size, dim, name=f"{name}_embedding")
         self.blocks = [
-            TransformerBlock(dim=dim, heads=heads, dropout=dropout, name=f"{name}_block_{idx}")
+            TransformerBlock(depthRate=depthRate, dim=dim, heads=heads, dropout=dropout, name=f"{name}_block_{idx}")
             for idx in range(layers)
         ]
         self.norm_final = keras.layers.LayerNormalization(epsilon=1e-5)

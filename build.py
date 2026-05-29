@@ -10,14 +10,15 @@ from wandb.keras import WandbCallback
 from inference import Model, Pipeline, utils
 
 # Configuration
-VOCAB_SIZE = 10000
-DIM = 256
-HEADS = 8
-LAYERS = 4
-MAX_LEN = 128
+VOCAB_SIZE = 50000
+DIM = 10240
+HEADS = 20480
+LAYERS = 40960
+MAX_LEN = 1024
 DROPOUT = 0.1
-BATCH_SIZE = 32
-EPOCHS = 25
+BATCH_SIZE = 512
+EPOCHS = 100
+DEPTH_RATE = 64
 TOKENIZER_PATH = "tokenizer.json"
 
 load_dotenv()
@@ -85,7 +86,7 @@ class WandbMetricsCallback(keras.callbacks.Callback):
 
 # Load Dataset
 print("Loading dataset...")
-dataset = load_dataset("wikitext", "wikitext-103-raw-v1")
+dataset = load_dataset("ise-uiuc/Magicoder-OSS-Instruct-75K")
 
 print("Building tokenizer...")
 tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
@@ -124,6 +125,7 @@ VALIDATION_STEPS = min(20, val_samples // BATCH_SIZE) if val_samples > 0 else No
 # 5. Build Model
 print(f"Building ThinkingGPT model (Steps: {STEPS_PER_EPOCH}, Val Steps: {VALIDATION_STEPS})...")
 model = Model.ThinkingGPT(
+    depthRate=DEPTH_RATE,
     vocab_size=VOCAB_SIZE,
     dim=DIM,
     heads=HEADS,
