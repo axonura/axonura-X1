@@ -1,75 +1,59 @@
 import os, sys, re
-import tensorflow as tf
+import torch
 from transformers import PreTrainedTokenizerFast
 from inference import Model, utils
 
-# Configuration (must match build.py)
-VOCAB_SIZE = 10000
-DIM = 256
-HEADS = 8
-LAYERS = 4
-MAX_LEN = 128
+VOCAB_SIZE = 50000
+DIM = 10240
+HEADS = 20480
+LAYERS = 40960
+MAX_LEN = 1024
 DROPOUT = 0.1
+DEPTH_RATE = 64
 
-# Instantiate the Model
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 model = Model.ThinkingGPT(
     vocab_size=VOCAB_SIZE,
+    depthRate=DEPTH_RATE,
     dim=DIM,
     heads=HEADS,
     layers=LAYERS,
     dropout=DROPOUT,
-    max_len=MAX_LEN
+    max_len=MAX_LEN,
 )
+model.to(device)
+model.load_state_dict(torch.load("model.weights.pt", map_location=device))
+model.eval()
 
-# Build the model by calling it on dummy input
-dummy_input = tf.zeros((1, MAX_LEN), dtype=tf.int32)
-_ = model(dummy_input, training=False)
-
-# Load the weights
-model.load_weights("model.weights.h5")
 tokenizer = PreTrainedTokenizerFast(tokenizer_file="tokenizer.json")
-
-# Configure special tokens
 tokenizer.pad_token = "<pad>"
 tokenizer.unk_token = "<unk>"
 tokenizer.bos_token = "<bos>"
 tokenizer.eos_token = "<eos>"
 
+
+@torch.no_grad()
 def predict(prompt, temperature=0.7, max_tokens=256):
-    # Add BOS token
     prompt_with_bos = tokenizer.bos_token + prompt
+    enc = tokenizer(prompt_with_bos, return_tensors="pt", add_special_tokens=False)
+    ids = enc["input_ids"].to(device)
 
-    # Encode without padding
-    enc = tokenizer(
-        prompt_with_bos,
-        return_tensors="tf",
-        add_special_tokens=False
-    )
-    ids = enc["input_ids"]
-
-    for i in range(max_tokens):
-        logits = model(ids, training=False)
+    for _ in range(max_tokens):
+        logits = model(ids)
         logits = logits[:, -1, :] / temperature
 
-        # Top-K sampling
         next_id = utils.top_k_sampling(logits, k=64)
+        ids = torch.cat([ids, next_id], dim=-1)
 
-        # Append the next token
-        ids = tf.concat([ids, next_id], axis=-1)
-
-        # Stop if EOS is generated
         if next_id[0, 0] == tokenizer.eos_token_id:
             break
 
-    # Decode to text
-    text = tokenizer.decode(ids[0].numpy(), skip_special_tokens=True)
-
-    # Post-process GPT/BPE subwords:
-    text = re.sub(r'(\w) (\w+)', r'\1\2', text)
+    text = tokenizer.decode(ids[0].cpu().numpy(), skip_special_tokens=True)
+    text = re.sub(r"(\w) (\w+)", r"\1\2", text)
     text = text.replace("Ġ", " ")
-
-    # Strip leading/trailing whitespace
     return text.strip()
+
 
 print("Type Help To Get Commands")
 while True:
@@ -84,6 +68,6 @@ while True:
     elif prompt.lower() == "help":
         print("Type 'exit' with enter key to exit the program.")
         print("Type 'clear' with enter key to clear the screen.")
-        print('Type Anything Then Press Enter Key To Ask AI')
+        print("Type Anything Then Press Enter Key To Ask AI")
     else:
         print("AI: ", predict(prompt))

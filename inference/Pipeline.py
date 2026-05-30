@@ -1,6 +1,15 @@
-import tensorflow as tf
+from torch.utils.data import IterableDataset, DataLoader
 from functools import partial
 from . import utils
+
+
+class TextIterDataset(IterableDataset):
+    def __init__(self, dataset_shard):
+        self.dataset_shard = dataset_shard
+
+    def __iter__(self):
+        return utils.text_gen(self.dataset_shard)
+
 
 class DSPipeline:
     def __init__(self, dataset, tokenizer, max_len=128, batch_size=32):
@@ -12,48 +21,23 @@ class DSPipeline:
         self.test_data = dataset.get("validation", dataset.get("test", None))
 
     def call(self):
-        # -----------------------------
-        # Build TensorFlow dataset for training
-        # -----------------------------
-        
-        # Create a partial for the generator to pass the specific dataset split
-        train_gen = partial(utils.text_gen, dataset_shard=self.train_data)
-        
-        train_ds = tf.data.Dataset.from_generator(
-            train_gen,
-            output_signature=tf.TensorSpec(shape=(), dtype=tf.string)
+        train_ds = TextIterDataset(self.train_data)
+        collate = partial(utils.collate_fn, tokenizer=self.tokenizer, max_len=self.max_len)
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=self.batch_size,
+            collate_fn=collate,
+            drop_last=True,
         )
 
-        train_ds = train_ds.batch(self.batch_size, drop_remainder=True)
-        
-        # Create a partial for the encoder to pass tokenizer and max_len
-        encode_fn = partial(utils.tf_encode, tokenizer=self.tokenizer, max_len=self.max_len)
-        
-        train_ds = train_ds.map(encode_fn, num_parallel_calls=tf.data.AUTOTUNE)
-        train_ds = train_ds.map(
-            lambda x: (x[:, :-1], x[:, 1:]),  # input-target shift
-            num_parallel_calls=tf.data.AUTOTUNE
-        )
-        train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
-
-        val_ds = None
+        val_loader = None
         if self.test_data:
-            # -----------------------------
-            # Build TensorFlow dataset for validation
-            # -----------------------------
-            val_gen = partial(utils.text_gen, dataset_shard=self.test_data)
-            
-            val_ds = tf.data.Dataset.from_generator(
-                val_gen,
-                output_signature=tf.TensorSpec(shape=(), dtype=tf.string)
+            val_ds = TextIterDataset(self.test_data)
+            val_loader = DataLoader(
+                val_ds,
+                batch_size=self.batch_size,
+                collate_fn=collate,
+                drop_last=True,
             )
 
-            val_ds = val_ds.batch(self.batch_size, drop_remainder=True)
-            val_ds = val_ds.map(encode_fn, num_parallel_calls=tf.data.AUTOTUNE)
-            val_ds = val_ds.map(
-                lambda x: (x[:, :-1], x[:, 1:]),  # input-target shift
-                num_parallel_calls=tf.data.AUTOTUNE
-            )
-            val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
-
-        return train_ds, val_ds
+        return train_loader, val_loader
