@@ -8,9 +8,8 @@ class DSPipeline:
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.batch_size = batch_size
-        # Assuming dataset has train/test splits or similar structure
-        self.train_data = dataset.get("train", dataset) 
-        self.test_data = dataset.get("test", None)
+        self.train_data = dataset.get("train", dataset)
+        self.test_data = dataset.get("validation", dataset.get("test", None))
 
     def call(self):
         # -----------------------------

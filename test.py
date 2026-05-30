@@ -1,7 +1,7 @@
 import os, sys, re
 import tensorflow as tf
 from transformers import PreTrainedTokenizerFast
-from inference import Model, Intelligence
+from inference import Model, utils
 
 # Configuration (must match build.py)
 VOCAB_SIZE = 10000
@@ -52,7 +52,7 @@ def predict(prompt, temperature=0.7, max_tokens=256):
         logits = logits[:, -1, :] / temperature
 
         # Top-K sampling
-        next_id = Intelligence.top_k_sampling(logits, k=64)
+        next_id = utils.top_k_sampling(logits, k=64)
 
         # Append the next token
         ids = tf.concat([ids, next_id], axis=-1)

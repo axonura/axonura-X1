@@ -3,6 +3,7 @@ tf-keras
 keras_hub
 transformers
 datasets
+huggingface_hub>=1.17
 tokenizers
 pandas
 matplotlib

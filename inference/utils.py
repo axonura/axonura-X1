@@ -37,3 +37,15 @@ def tf_encode(text_batch, tokenizer, max_len):
 def batch_iterator(dataset):
     for i in range(0, len(dataset), 1000):
         yield dataset[i: i + 1000]["text"]
+
+
+def top_k_sampling(logits, k=64):
+    top_k_vals, top_k_indices = tf.math.top_k(logits, k=k)
+    top_k_logits = tf.fill(tf.shape(logits), -1e9)
+    top_k_logits = tf.tensor_scatter_nd_update(
+        top_k_logits,
+        tf.expand_dims(top_k_indices, axis=-1),
+        top_k_vals
+    )
+    probs = tf.nn.softmax(top_k_logits, axis=-1)
+    return tf.random.categorical(tf.math.log(probs + 1e-10), num_samples=1)

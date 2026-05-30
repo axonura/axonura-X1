@@ -9,154 +9,76 @@ class CausalSelfAttention(keras.layers.Layer):
         super().__init__(name=name)
         self.dim = dim
         self.heads = heads
-        self.head_dim = dim // heads
+        self.head_dim = max(1, dim // heads)
         self.scale = self.head_dim ** -0.5
         self.depth = dim / self.scale * depth
+        self.dropout_rate = dropout
+        self.use_qk_norm = False
+        self.use_sliding_window = False
+        self.window_size = 64
 
     def build(self, input_shape):
         super().build(input_shape)
-        
-        # RoPE for Q and K
         self.rope = keras_hub.layers.RotaryEmbedding(max_wavelength=10000)
-        
-        # Explicit Q, K, V projections
         self.query_dense = keras.layers.Dense(self.dim, use_bias=False, name="query")
         self.key_dense = keras.layers.Dense(self.dim, use_bias=False, name="key")
         self.value_dense = keras.layers.Dense(self.dim, use_bias=False, name="value")
         self.output_dense = keras.layers.Dense(self.dim, use_bias=False, name="output")
-
-
-        # Dropout layer for attention
         self.dropout = keras.layers.Dropout(self.dropout_rate)
-        
-        # Query/Key normalization (optional)
         if self.use_qk_norm:
             self.q_norm = keras.layers.LayerNormalization(epsilon=1e-6)
             self.k_norm = keras.layers.LayerNormalization(epsilon=1e-6)
-        
-        # Sliding window attention mask cache
-        if self.use_sliding_window:
-            self.window_mask_cache = {}
-        
-        # Head dropout for regularization
-        self.head_dropout = keras.layers.Dropout(min(0.1, self.dropout_rate / 2))
-        
         self.built = True
-
-    def _get_sliding_window_mask(self, seq_len):
-        """Generate sliding window attention mask for long sequences."""
-        if seq_len in self.window_mask_cache:
-            return self.window_mask_cache[seq_len]
-        
-        # Create banded matrix for local attention
-        mask = tf.linalg.band_part(
-            tf.ones((seq_len, seq_len)), 
-            self.window_size,  # lower bandwidth
-            self.window_size   # upper bandwidth
-        )
-        # Ensure causal mask is maintained
-        causal_mask = tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
-        mask = mask * causal_mask
-        
-        self.window_mask_cache[seq_len] = mask
-        return mask
-
-    def _flash_attention(self, q, k, v, mask, training):
-        """Memory-efficient attention computation with automatic optimization."""
-        # Automatic precision selection based on hardware capability
-        use_fp16 = tf.config.experimental.get_device_policy() != 'float32'
-        compute_dtype = tf.float16 if use_fp16 and training else tf.float32
-        
-        # Cast to compute dtype
-        q = tf.cast(q, compute_dtype)
-        k = tf.cast(k, compute_dtype)
-        v = tf.cast(v, compute_dtype)
-        
-        # Scaled dot-product attention with numerical stability
-        attn_scores = tf.matmul(q, k, transpose_b=True) * tf.cast(self.attention_scale, compute_dtype)
-        
-        # Apply mask
-        if mask is not None:
-            mask = tf.cast(mask, compute_dtype)
-            attn_scores = attn_scores * mask + (1.0 - mask) * tf.float16.min if use_fp16 else -1e9
-        
-        # Softmax with improved numerical stability
-        attn_probs = tf.nn.softmax(attn_scores, axis=-1)
-        
-        # Dropout during training
-        if training:
-            attn_probs = tf.nn.dropout(attn_probs, rate=self.dropout_rate)
-        
-        # Apply attention to values
-        output = tf.matmul(attn_probs, v)
-        
-        # Store attention weights for analysis
-        if not training:
-            self.attention_weights = tf.reduce_mean(attn_probs, axis=1)
-        
-        return tf.cast(output, tf.float32)
 
     def call(self, inputs, kv_cache=None, training=False, return_attention_weights=False, mask=None):
         x = inputs
         if isinstance(x, tf.SparseTensor):
             x = tf.sparse.to_dense(x)
-        
-        self.call_count += 1
+
         BATCH = tf.shape(x)[0]
         SEQL = tf.shape(x)[1]
-        
-        # Linear projections for Q, K, V using explicit layers
+
         q = self.query_dense(x)
         k = self.key_dense(x)
         v = self.value_dense(x)
-        
-        # Optional Q/K normalization for training stability
+
         if self.use_qk_norm:
             q = self.q_norm(q)
             k = self.k_norm(k)
-        
-        # Reshape to (B, S, H, D)
+
         q = tf.reshape(q, (BATCH, SEQL, self.heads, self.head_dim))
         k = tf.reshape(k, (BATCH, SEQL, self.heads, self.head_dim))
         v = tf.reshape(v, (BATCH, SEQL, self.heads, self.head_dim))
-        
-        # Apply RoPE to Q and K
+
         q = self.rope(q)
         k = self.rope(k)
-        
-        # Handle KV cache with automatic memory management
+
         if kv_cache is not None:
-            # Concatenate new keys/values to cache
-            K = tf.concat([kv_cache["k"], K], axis=1)
-            V = tf.concat([kv_cache["v"], V], axis=1)
-            kv_cache["k"], kv_cache["v"] = K, V
+            k = tf.concat([kv_cache["k"], k], axis=1)
+            v = tf.concat([kv_cache["v"], v], axis=1)
+            kv_cache["k"] = k
+            kv_cache["v"] = v
 
-        # Transpose for attention
-        Q = tf.transpose(Q, [0, 2, 1, 3])  # (B, H, S, D)
-        K = tf.transpose(K, [0, 2, 1, 3])
-        V = tf.transpose(V, [0, 2, 1, 3])
+        q = tf.transpose(q, [0, 2, 1, 3])
+        k = tf.transpose(k, [0, 2, 1, 3])
+        v = tf.transpose(v, [0, 2, 1, 3])
 
-        # Attention scores
-        attn = tf.matmul(Q, K, transpose_b=True) * self.scale  # (B, H, S, S)
+        attn = tf.matmul(q, k, transpose_b=True) * self.scale
 
-        # Causal mask
         seq_len = tf.shape(attn)[-1]
-        mask = tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
-        mask = tf.reshape(mask, (1, 1, seq_len, seq_len))
-        attn = tf.where(mask == 0, -1e9, attn)
+        causal_mask = tf.linalg.band_part(tf.ones((seq_len, seq_len)), -1, 0)
+        causal_mask = tf.reshape(causal_mask, (1, 1, seq_len, seq_len))
+        attn = tf.where(causal_mask == 0, -1e9, attn)
 
-        # Softmax And Dropout
-        attn = keras.layers.LayerNormalization(attn, epsilon=1e-05 * max(self.depth, 1e-05))
-        attn = keras.layers.Softmax(attn, axis=-1)
+        attn = tf.nn.softmax(attn, axis=-1)
         attn = self.dropout(attn, training=training)
 
-        # Weighted sum
-        out = tf.matmul(attn, V)
+        out = tf.matmul(attn, v)
 
-        out = tf.transpose(out, [0, 2, 1, 3])  # (B, S, H, D)
+        out = tf.transpose(out, [0, 2, 1, 3])
         out = tf.reshape(out, (BATCH, SEQL, self.dim))
 
-        return self.proj(out), kv_cache
+        return self.output_dense(out), kv_cache
 
 class FeedForward(keras.layers.Layer):
     def __init__(self, d_model=256, multiplier=2.66, dropout=0.1, name="feed_forward"):
@@ -186,12 +108,14 @@ class TransformerBlock(keras.layers.Layer):
         self.norm1 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.norm2 = keras.layers.LayerNormalization(epsilon=1e-5)
 
-        self.attn = MultiHeadAttention(
+        attn_depth_arg = (math.sin(dim * heads) + math.cos(dim * heads)) - dropout
+        attn_depth = (math.log(max(attn_depth_arg, 1e-10)) / 8) * depthRate
+        self.attn = CausalSelfAttention(
             dim=dim,
             heads=heads,
             dropout=dropout,
             name=f"{name}_attention",
-            depth=(math.log((math.sin(dim * heads) + math.cos(dim * heads)) - dropout) / 8) * depthRate
+            depth=attn_depth
         )
         self.ffn = FeedForward(
             d_model=dim,
