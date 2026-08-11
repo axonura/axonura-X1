@@ -24,7 +24,7 @@ Axonura X1 is a language model built using the GPT-6 Like architecture. It is de
 
 ## Features
 
-- GPT-2 Like architecture
+- GPT-6 Like architecture
 - Pre-trained on a large corpus of text
 - Easy to use API
 - Fast and efficient inference
