@@ -2,11 +2,18 @@
 license: mit
 language:
 - en
+- zh
+- ja
+- ko
+- ru
 metrics:
 - accuracy
 pipeline_tag: question-answering
 library_name: adapter-transformers
-version: 0.0.2
+version: 0.5
+base_model:
+- google/vit-base-patch16-224
+- openai/whisper-base
 ---
 
 # Axonura X1
@@ -29,18 +36,9 @@ WANDB_API_KEY=your_wandb_api_key
 WANDB_PROJECT=axonura-x1-training
 WANDB_ENTITY=your_team_or_username
 ```
-Python 3.7 Version Or Later Must Be Installed On Your Machine.
+Python 3.9 Version Or Later Must Be Installed On Your Machine.
 ```bash
 pip install -r requirements.txt
 python3 build.py
 python3 test.py
-```
-Or You Can Use Dockerized Environment
-```bash
-docker build -t axonura-x1:latest .
-docker run -it --rm axonura-x1 bash
-```
-If You Need GPU Access To Run The Command:
-```bash
-docker run --gpus all -it --rm axonura-x1 bash
 ```

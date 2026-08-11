@@ -187,7 +187,8 @@ if args.modality == "local":
 elif args.modality == "text":
     dataset = load_dataset("wikitext", "wikitext-103-raw-v1")
 else:
-    dataset = load_dataset(f"axonura/{args.modality}")
+    print(f"Downloading {args.modality} dataset from approved sources...")
+    dataset = datasets.load_modality(args.modality)
 
 print("Building tokenizer...")
 tokenizer = Tokenizer(models.BPE(unk_token="<unk>"))
