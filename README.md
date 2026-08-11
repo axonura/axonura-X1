@@ -20,7 +20,7 @@ base_model:
 
 ## Description
 
-Axonura X1 is a language model built using the GPT-2 Like architecture. It is designed to understand and generate text based on the input it receives.
+Axonura X1 is a language model built using the GPT-6 Like architecture. It is designed to understand and generate text based on the input it receives.
 
 ## Features
 
