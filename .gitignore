@@ -16,7 +16,7 @@ __pycache__
 __init__.py
 
 # Wandb Generated Files
-wandb
+wandb/
 .wandb
 *.wandb
 .env
